@@ -23,10 +23,11 @@ def load_from_folder(path):
 
 myLabels = np.loadtxt("label.txt", int)
 
+# 1
 np.average(myLabels[:, 3] / myLabels[:, 4])
 
 
-# 40*60
+# 2 - On choisi une taille unique de 40*60
 
 
 def resize_label(lbls):
@@ -46,14 +47,6 @@ def resize_label(lbls):
     return labels
 
 
-def draw_rectangle(img, face, color, thickness=3):
-    img[face[1]:face[1] + face[3], face[2]:face[2] + thickness] = color
-    img[face[1]:face[1] + face[3], face[2] + face[4]:face[2] + face[4] + thickness] = color
-    img[face[1]:face[1] + thickness, face[2]:face[2] + face[4]] = color
-    img[face[1] + face[3]:face[1] + face[3] + thickness, face[2]:face[2] + face[4] + thickness] = color
-    return img
-
-
 def crop_with_padding(image, label):
     if label[1] < 0:
         image = util.pad(image, ((label[1] * -1, 0), (0, 0), (0, 0)), 'constant')
@@ -69,14 +62,21 @@ def crop_with_padding(image, label):
     return image[label[1]:label[1] + label[3], label[2]:label[2] + label[4]]
 
 
+def get_labels_from_image_index(index, labels):
+    return labels[np.where(labels[:, 0] == index)]
+
+
+def get_faces_from_image_index(index, faces, labels):
+    return faces[np.where(labels[:, 0] == index)]
+
+
 def extract_faces(images, labels):
     faces = []
     for i in range(0, len(images)):
-        rows = np.where(labels[:, 0] == i)[0]
-        for row in rows:
-            label = labels[row]
+        image_labels = get_labels_from_image_index(i, labels)
+        for label in image_labels:
             faces.append(crop_with_padding(images[i], label))
-    return faces
+    return np.array(faces)
 
 
 myLabels = np.loadtxt("label.txt", int)
@@ -87,8 +87,5 @@ myImages = load_from_folder("train/")
 faces = extract_faces(myImages, myLabelsResized)
 
 for face in faces:
-    transform.resize(face, (60, 40))
-
-io.imshow(faces[446])
-io.show()
+    transform.resize(face, (60, 40), mode="constant")
 
