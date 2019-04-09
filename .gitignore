@@ -1,2 +1,6 @@
 train/
+test/
+result1/
 label.txt
+
+__pycache__/
