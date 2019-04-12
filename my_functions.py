@@ -152,6 +152,21 @@ def generate_random_negatives(number, image, labels):
     return result
 
 
+def _remove_duplicates(labels):
+    """
+    Remove duplicates in labels that have the same index
+    :param labels: labels from which remove duplicates
+    :return: labels without duplicates
+    """
+    to_delete = []
+    for i in range(len(labels)):
+        for j in range(i + 1, len(labels)):
+            if intersection_ratio(labels[i], labels[j]) >= 0.5:
+                to_delete.append(j)
+    to_delete = np.unique(np.array(to_delete))
+    return np.delete(labels, to_delete, 0)
+
+
 def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
     """
     Find faces in given image with a given classifier with sliding window
@@ -180,24 +195,40 @@ def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
                 if clf.predict([hog]) == 1:
                     labels.append([index, i, j, 60 * divider, 40 * divider])
 
-    return np.array(labels)
+    return _remove_duplicates(np.array(labels))
 
 
-def remove_duplicates(labels):
+def get_false_positives(detections, faces):
     """
-    Remove duplicates in labels that have the same index
-    :param labels: labels from which remove duplicates
-    :return: labels without duplicates
+    Return false positive labels
+    :param detections: detections from which you want to find false positives
+    :param faces: actual faces
+    :return: false positive labels
     """
-    to_delete = []
-    for i in range(0, 1000):
-        faces = labels[np.where(labels[:, 0] == i)]
-        if len(faces) == 0:
-            continue
-        index = np.where(labels[:, 0] == i)[0][0]
-        for j in range(len(faces)):
-            for k in range(j + 1, len(faces)):
-                if intersection_ratio(faces[j], faces[k]) >= 0.5:
-                    to_delete.append(index + k)
-    to_delete = np.unique(np.array(to_delete))
-    return np.delete(labels, to_delete, 0)
+    false_positives = []
+    for detection in detections:
+        is_positive = False
+        for face in faces:
+            if intersection_ratio(detection, face) > 0.5:
+                is_positive = True
+                break
+        if not(is_positive):
+            false_positives.append(detection)
+
+    return false_positives
+
+
+def get_positives(detections, faces):
+    """
+    Return positive labels
+    :param detections: detections from which you want to find positives
+    :param faces: actual faces
+    :return: positive labels
+    """
+    false_positives = []
+    for detection in detections:
+        for face in faces:
+            if intersection_ratio(detection, face) > 0.5:
+                false_positives.append(detection)
+                break
+    return false_positives
