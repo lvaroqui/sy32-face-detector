@@ -33,6 +33,10 @@ def load_from_folder(path):
     return images
 
 
+def get_label_with_index(labels, index):
+    return labels[np.where(labels[:, 0] == index)]
+
+
 def resize_label(label):
     """
     Resize a given label to a given HEIGHT / WIDTH ratio
@@ -188,12 +192,13 @@ def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
             image = transform.resize(image, (new_height, new_width), anti_aliasing=True)
         else:
             new_width, new_height = img_width, img_height
+
         for i in range(0, new_height - 60, vstep):
             for j in range(0, new_width - 40, hstep):
                 face = image[i:i + 60, j:j + 40]
                 hog = feature.hog(face)
                 if clf.predict([hog]) == 1:
-                    labels.append([index, i, j, 60 * divider, 40 * divider])
+                    labels.append([index, i*divider, j*divider, 60 * divider, 40 * divider])
 
     return _remove_duplicates(np.array(labels))
 
@@ -218,17 +223,35 @@ def get_false_positives(detections, faces):
     return false_positives
 
 
-def get_positives(detections, faces):
+def f_score(detections, faces):
     """
-    Return positive labels
-    :param detections: detections from which you want to find positives
+    Return the F-score for a set of detections
+    :param detections: detections
     :param faces: actual faces
-    :return: positive labels
+    :return: F-score
     """
-    false_positives = []
-    for detection in detections:
-        for face in faces:
-            if intersection_ratio(detection, face) > 0.5:
-                false_positives.append(detection)
-                break
-    return false_positives
+    vp, fp, fn, vn = 0, 0, 0, 0
+    max_label = np.max(faces[:, 0])
+    for i in range(max_label+1):
+        detections_i = get_label_with_index(detections, i)
+        faces_i = get_label_with_index(faces, i)
+        local_vp = 0
+        for face in faces_i:
+            found = False
+            for detection in detections_i:
+                if intersection_ratio(face, detection) >= 0.5:
+                    found = True
+                    break
+            if found:
+                vp += 1
+                local_vp += 1
+            else:
+                fn += 1
+        fp += len(detections_i) - local_vp
+    print(vp, fp, vn, fn)
+    precison = vp / (vp + fp)
+    rappel = vp / (vp + fn)
+
+    print(precison, rappel)
+
+    return 2*((precison*rappel)/precison+rappel)

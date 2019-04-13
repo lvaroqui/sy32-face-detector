@@ -12,6 +12,7 @@ from my_functions import intersection_ratio
 from my_functions import generate_random_negatives
 from my_functions import find_faces
 from my_functions import get_false_positives
+from my_functions import f_score
 
 from tqdm import tqdm
 
@@ -19,6 +20,9 @@ I_INDEX = 1
 J_INDEX = 2
 HEIGHT_INDEX = 3
 WIDTH_INDEX = 4
+
+# IMPORTANT NOTE : I renamed the train image and label 1000 to 0 to have picture index matching their number
+# However the test is not modified for obvious reasons
 
 print("Loading train labels...")
 myLabels = np.loadtxt("label.txt", int)
@@ -75,7 +79,7 @@ myShuffledTargets = myTargets[permutation]
 # Learning
 print("Learning...")
 
-# from sklearn.svm import SVC
+from sklearn.svm import SVC
 # clf = SVC(kernel="rbf", gamma="scale")
 
 from sklearn.svm import LinearSVC
@@ -92,17 +96,20 @@ cv_results = cross_validate(clf, myShuffledHogs, myShuffledTargets, cv=3, return
 print("Result of cross_validation :")
 print(cv_results["test_score"])
 
-# print("Finding faces on all images, this may take a while...")
-# myDetections = []
-# for i in tqdm(range(len(myImages))):
-#     labels = find_faces(util.img_as_float(rgb2gray(myImages[i])), clf, i)
-#     for label in labels:
-#         myDetections.append(label)
-# myDetections = np.array(myDetections)
-# np.savetxt("detections_train.txt", myDetections)
+print("Finding faces on all images, this may take a while...")
+myDetections = []
+for i in tqdm(range(len(myImages))):
+    labels = find_faces(util.img_as_float(rgb2gray(myImages[i])), clf, i)
+    for label in labels:
+        myDetections.append(label)
+myDetections = np.array(myDetections)
+np.savetxt("detections_train.txt", myDetections)
 
-# Loading from file if needed
+f_score(myDetections, myLabelsResized)
+
+# Loading from file
 myDetections = np.loadtxt("detections_train.txt").astype(int)
+
 
 print("Extracting false positives labels from detections...")
 myFalsePositivesLabels = []
@@ -156,10 +163,12 @@ for i in tqdm(range(len(myImages))):
     for label in labels:
         myDetections.append(label)
 myDetections = np.array(myDetections)
-np.savetxt("detections_train.txt", myDetections)
+np.savetxt("detections_train2.txt", myDetections)
+
+f_score(myDetections, myLabelsResized)
 
 from joblib import dump
 
 print("Saving classifier to \"clf.joblib\"")
-dump(clf, 'clf.joblib')
+dump(clf2, 'clf2.joblib')
 
