@@ -4,6 +4,7 @@ Custom functions for face detector project
 import os
 import time
 from random import randint
+from skimage.color import rgb2gray
 
 import numpy as np
 from skimage import feature
@@ -12,6 +13,8 @@ from skimage import transform
 from skimage import util
 from tqdm import tqdm
 from matplotlib import pyplot as plt
+
+from multiprocessing import Pool
 
 I_INDEX = 1
 J_INDEX = 2
@@ -174,7 +177,7 @@ def _remove_duplicates(labels):
 def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
     """
     Find faces in given image with a given classifier with sliding window
-    :param image: image in witch to find faces
+    :param image: image in which to find faces
     :param clf: classifier to recognize face
     :param index: index of the image
     :param vstep: vertical step taken during sliding window
@@ -203,6 +206,55 @@ def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
     return _remove_duplicates(np.array(labels))
 
 
+def scan_images(images, clf, first_index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
+    """
+    Scan image synchronously
+
+    :param images: images to scan
+    :param clf: classifier
+    :param first_index: first_index of scanned image
+    :param vstep: vertical step taken during sliding window
+    :param hstep: horizontal step taken during sliding window
+    :param dmax: maximum divider for image during sliding window
+    :param dstep: divider step during sliding window
+    :return:
+    """
+    detections = []
+    for i in tqdm(range(len(images))):
+        labels = find_faces(util.img_as_float(rgb2gray(images[i])), clf, first_index + i,
+                            vstep, hstep, dmax, dstep)
+        for label in labels:
+            detections.append(label)
+    return np.array(detections)
+
+
+def scan_images_multiprocessed(images, clf, processes, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
+    """
+    Scan a batch of images with multiple process
+    :param images: images to scan
+    :param clf: classifier to scan images with
+    :param processes: number of process to run
+    :param vstep: vertical step taken during sliding window
+    :param hstep: horizontal step taken during sliding window
+    :param dmax: maximum divider for image during sliding window
+    :param dstep: divider step during sliding window
+    :return: face labels
+    """
+    pool = Pool(processes=processes)  # start 4 worker processes
+    results = []
+    for i in range(0, processes):
+        begin = i*int(len(images)/processes)
+        if i == processes - 1:
+            end = len(images)
+        else:
+            end = (i+1) * int(len(images) / processes)
+        results.append(pool.apply_async(scan_images, (images[begin:end], clf, begin, vstep, hstep, dmax, dstep)))
+    detections = []
+    for result in results:
+        detections.append(result.get())
+    return np.concatenate(detections).astype(int)
+
+
 def get_false_positives(detections, faces):
     """
     Return false positive labels
@@ -223,12 +275,12 @@ def get_false_positives(detections, faces):
     return false_positives
 
 
-def f_score(detections, faces):
+def stats(detections, faces):
     """
-    Return the F-score for a set of detections
+    Return the stats for a set of detections
     :param detections: detections
     :param faces: actual faces
-    :return: F-score
+    :return: precisions, rappel, F-score
     """
     vp, fp, fn, vn = 0, 0, 0, 0
     max_label = np.max(faces[:, 0])
@@ -248,10 +300,9 @@ def f_score(detections, faces):
             else:
                 fn += 1
         fp += len(detections_i) - local_vp
-    print(vp, fp, vn, fn)
-    precison = vp / (vp + fp)
+
+    precision = vp / (vp + fp)
     rappel = vp / (vp + fn)
+    f_score = 2*((precision*rappel)/(precision+rappel))
 
-    print(precison, rappel)
-
-    return 2*((precison*rappel)/precison+rappel)
+    return precision, rappel, f_score
