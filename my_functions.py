@@ -81,7 +81,7 @@ def _extract_rects_with_padding(image, label):
         image = util.pad(image, ((0, 0), (0, image.shape[0] + label[J_INDEX] + label[WIDTH_INDEX]), (0, 0)), 'constant')
 
     return image[label[I_INDEX]:label[I_INDEX] + label[HEIGHT_INDEX],
-                 label[J_INDEX]:label[J_INDEX] + label[WIDTH_INDEX]]
+           label[J_INDEX]:label[J_INDEX] + label[WIDTH_INDEX]]
 
 
 def extract_rects(image, labels):
@@ -110,7 +110,7 @@ def intersection_ratio(label1, label2):
 
     # Check if the rectangles overlap
     if (not (label1[J_INDEX] + label1[WIDTH_INDEX] < label2[J_INDEX] or label1[J_INDEX] > label2[J_INDEX] + label2[
-             WIDTH_INDEX] or label1[I_INDEX] + label1[HEIGHT_INDEX] < label2[I_INDEX] or
+        WIDTH_INDEX] or label1[I_INDEX] + label1[HEIGHT_INDEX] < label2[I_INDEX] or
              label1[I_INDEX] > label2[I_INDEX] + label2[HEIGHT_INDEX])):
         top = max(label1[I_INDEX], label2[I_INDEX])
         bottom = min(label1[I_INDEX] + label1[HEIGHT_INDEX], label2[I_INDEX] + label2[HEIGHT_INDEX])
@@ -201,7 +201,8 @@ def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
                 face = image[i:i + 60, j:j + 40]
                 hog = feature.hog(face)
                 if clf.predict([hog]) == 1:
-                    labels.append([index, i*divider, j*divider, 60 * divider, 40 * divider])
+                    labels.append(
+                        [index, i * divider, j * divider, 60 * divider, 40 * divider, clf.decision_function([hog])[0]])
 
     return _remove_duplicates(np.array(labels))
 
@@ -243,16 +244,16 @@ def scan_images_multiprocessed(images, clf, processes, vstep=15, hstep=15, dmax=
     pool = Pool(processes=processes)  # start 4 worker processes
     results = []
     for i in range(0, processes):
-        begin = i*int(len(images)/processes)
+        begin = i * int(len(images) / processes)
         if i == processes - 1:
             end = len(images)
         else:
-            end = (i+1) * int(len(images) / processes)
+            end = (i + 1) * int(len(images) / processes)
         results.append(pool.apply_async(scan_images, (images[begin:end], clf, begin, vstep, hstep, dmax, dstep)))
     detections = []
     for result in results:
         detections.append(result.get())
-    return np.concatenate(detections).astype(int)
+    return np.concatenate(detections)
 
 
 def get_false_positives(detections, faces):
@@ -269,7 +270,7 @@ def get_false_positives(detections, faces):
             if intersection_ratio(detection, face) > 0.5:
                 is_positive = True
                 break
-        if not(is_positive):
+        if not (is_positive):
             false_positives.append(detection)
 
     return false_positives
@@ -284,7 +285,7 @@ def stats(detections, faces):
     """
     vp, fp, fn, vn = 0, 0, 0, 0
     max_label = np.max(faces[:, 0])
-    for i in range(max_label+1):
+    for i in range(max_label + 1):
         detections_i = get_label_with_index(detections, i)
         faces_i = get_label_with_index(faces, i)
         local_vp = 0
@@ -303,6 +304,29 @@ def stats(detections, faces):
 
     precision = vp / (vp + fp)
     rappel = vp / (vp + fn)
-    f_score = 2*((precision*rappel)/(precision+rappel))
+    f_score = 2 * ((precision * rappel) / (precision + rappel))
 
     return precision, rappel, f_score
+
+
+def precision_rappel(detections, faces):
+    res = np.zeros((len(detections), 2))
+    detections_sorted = detections[np.flip(detections[:, 5].argsort())]
+    vp, fp, fn, vn = 0, 0, 0, 0
+
+    for i in range(len(detections_sorted)):
+        found = False
+        for j in np.where(faces[:, 0] == detections_sorted[i, 0])[0]:
+            if intersection_ratio(detections_sorted[i], faces[j]) > 0.5:
+                found = True
+                break
+        if found:
+            vp += 1
+        else:
+            fp += 1
+        fn = len(faces) - i - 1
+
+        res[i, 0] = vp / (vp + fn)  # rappel
+        res[i, 1] = vp / (vp + fp)  # precision
+
+    return res

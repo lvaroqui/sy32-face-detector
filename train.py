@@ -17,6 +17,9 @@ from my_functions import stats
 from my_functions import get_label_with_index
 from joblib import dump
 
+from my_functions import precision_rappel
+from matplotlib import pyplot as plt
+
 from os import mkdir
 
 from tqdm import tqdm
@@ -28,7 +31,7 @@ if __name__ == '__main__':
     from sklearn.svm import SVC
     # from sklearn.svm import LinearSVC
 
-    config = "svc_rbf_kernel"
+    config = "svc_kernel_rbf_1"
 
     clf = SVC(kernel="rbf", gamma="scale")
     clf2 = SVC(kernel="rbf", gamma="scale")
@@ -43,17 +46,17 @@ if __name__ == '__main__':
     maxDivider = 2.5
     stepDivider = 0.33
 
-    processes = 7
+    processes = 8
 
     # PROGRAM
+
+    # IMPORTANT NOTE : I renamed the train image and label 1000 to 0 to have picture index matching their number
+    # However the test images is not modified for obvious reasons
 
     I_INDEX = 1
     J_INDEX = 2
     HEIGHT_INDEX = 3
     WIDTH_INDEX = 4
-
-    # IMPORTANT NOTE : I renamed the train image and label 1000 to 0 to have picture index matching their number
-    # However the test images is not modified for obvious reasons
 
     print("----Preparing data for classifier----")
     print("Loading train labels...")
@@ -125,7 +128,13 @@ if __name__ == '__main__':
     print(cv_results["test_score"])
 
     print("Finding faces on all images, this may take a while...")
-    myDetections = scan_images_multiprocessed(myImages, clf, processes, verticalStep, horizontalStep, maxDivider, stepDivider)
+    myDetections = scan_images_multiprocessed(myImages,
+                                              clf,
+                                              processes,
+                                              verticalStep,
+                                              horizontalStep,
+                                              maxDivider,
+                                              stepDivider).astype(int)
 
     print("\nStatistics for intermediate classifier (precision, rappel and f-score :")
     print(stats(myDetections, myLabelsResized))
@@ -200,3 +209,9 @@ if __name__ == '__main__':
     f.write("Rappel: {}".format(myNewDetectionsStats[1]) + "\n")
     f.write("F-Score: {}".format(myNewDetectionsStats[2]) + "\n")
     f.close()
+
+    precision_rappel_data = precision_rappel(myNewDetections, myLabelsResized)
+    plt.plot(precision_rappel_data[:, 0], precision_rappel_data[:, 1], linewidth=5)
+    plt.xlim((0, 1))
+    plt.ylim((0, 1))
+    plt.savefig(folder_path + "precision_rappel.jpg")
