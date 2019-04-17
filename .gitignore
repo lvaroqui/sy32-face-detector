@@ -1,6 +1,7 @@
 train/
 test/
 result1/
+test_faces/
 label.txt
 
 __pycache__/
