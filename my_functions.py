@@ -174,7 +174,7 @@ def _remove_duplicates(labels):
     return np.delete(labels, to_delete, 0)
 
 
-def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
+def find_faces(image, clf, index, vstep=15, hstep=15, dnum=5):
     """
     Find faces in given image with a given classifier with sliding window
     :param image: image in which to find faces
@@ -182,14 +182,14 @@ def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
     :param index: index of the image
     :param vstep: vertical step taken during sliding window
     :param hstep: horizontal step taken during sliding window
-    :param dmax: maximum divider for image during sliding window
-    :param dstep: divider step during sliding window
+    :param dnum: divider step during sliding window
     :return: labels with identified faces
     """
     img_height, img_width = image.shape[0], image.shape[1]
 
     labels = []
-    for divider in np.arange(1, dmax, dstep):
+    dmax = int(min(img_height/60, img_height/40))
+    for divider in np.arange(1, dmax, (dmax - 1)/dnum):
         if divider > 1:
             new_width, new_height = int(img_width / divider), int(img_height / divider)
             image = transform.resize(image, (new_height, new_width), anti_aliasing=True)
@@ -207,7 +207,7 @@ def find_faces(image, clf, index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
     return _remove_duplicates(np.array(labels))
 
 
-def scan_images(images, clf, first_index, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
+def scan_images(images, clf, first_index, vstep=15, hstep=15, dnum=5):
     """
     Scan image synchronously
 
@@ -216,20 +216,19 @@ def scan_images(images, clf, first_index, vstep=15, hstep=15, dmax=2.5, dstep=0.
     :param first_index: first_index of scanned image
     :param vstep: vertical step taken during sliding window
     :param hstep: horizontal step taken during sliding window
-    :param dmax: maximum divider for image during sliding window
-    :param dstep: divider step during sliding window
+    :param dnum: divider step during sliding window
     :return:
     """
     detections = []
     for i in tqdm(range(len(images))):
         labels = find_faces(util.img_as_float(rgb2gray(images[i])), clf, first_index + i,
-                            vstep, hstep, dmax, dstep)
+                            vstep, hstep, dnum)
         for label in labels:
             detections.append(label)
     return np.array(detections)
 
 
-def scan_images_multiprocessed(images, clf, processes, vstep=15, hstep=15, dmax=2.5, dstep=0.5):
+def scan_images_multiprocessed(images, clf, processes, vstep=15, hstep=15, dnum=5):
     """
     Scan a batch of images with multiple process
     :param images: images to scan
@@ -237,8 +236,7 @@ def scan_images_multiprocessed(images, clf, processes, vstep=15, hstep=15, dmax=
     :param processes: number of process to run
     :param vstep: vertical step taken during sliding window
     :param hstep: horizontal step taken during sliding window
-    :param dmax: maximum divider for image during sliding window
-    :param dstep: divider step during sliding window
+    :param dnum: divider step during sliding window
     :return: face labels
     """
     pool = Pool(processes=processes)  # start 4 worker processes
@@ -249,7 +247,7 @@ def scan_images_multiprocessed(images, clf, processes, vstep=15, hstep=15, dmax=
             end = len(images)
         else:
             end = (i + 1) * int(len(images) / processes)
-        results.append(pool.apply_async(scan_images, (images[begin:end], clf, begin, vstep, hstep, dmax, dstep)))
+        results.append(pool.apply_async(scan_images, (images[begin:end], clf, begin, vstep, hstep, dnum)))
     detections = []
     for result in results:
         detections.append(result.get())
@@ -270,7 +268,7 @@ def get_false_positives(detections, faces):
             if intersection_ratio(detection, face) > 0.5:
                 is_positive = True
                 break
-        if not (is_positive):
+        if not is_positive:
             false_positives.append(detection)
 
     return false_positives

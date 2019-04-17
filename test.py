@@ -11,7 +11,7 @@ if __name__ == '__main__':
     testImages = load_from_folder("test/")
 
     print("Finding faces on all images, this may take a while...")
-    myDetectedFaces = scan_images_multiprocessed(testImages, clf, 8, 5, 5, 2.5, 0.25)
+    myDetectedFaces = scan_images_multiprocessed(testImages, clf, 8, 5, 5, 5)
 
     j = 0
     for i, image in enumerate(testImages):

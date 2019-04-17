@@ -31,27 +31,27 @@ if __name__ == '__main__':
     from sklearn.svm import SVC
     # from sklearn.svm import LinearSVC
 
-    config = "svc_kernel_rbf_1"
+    config = "svc_kernel_3"
+    comment = "new scale system"
 
     clf = SVC(kernel="rbf", gamma="scale")
     clf2 = SVC(kernel="rbf", gamma="scale")
-    # clf = LinearSVC()
-    # clf2 = LinearSVC()
+    # clf = LinearSVC(C=3)
+    # clf2 = LinearSVC(C=3)
 
     clf.max_iter = 3000
     clf2.max_iter = 3000
 
     verticalStep = 10
     horizontalStep = 10
-    maxDivider = 2.5
-    stepDivider = 0.33
+    divideScale = 10
 
     processes = 8
 
     # PROGRAM
 
-    # IMPORTANT NOTE : I renamed the train image and label 1000 to 0 to have picture index matching their number
-    # However the test images is not modified for obvious reasons
+    # IMPORTANT NOTE : I renamed the train image and label n°1000 to n°0
+    # to have picture index matching their number
 
     I_INDEX = 1
     J_INDEX = 2
@@ -133,8 +133,7 @@ if __name__ == '__main__':
                                               processes,
                                               verticalStep,
                                               horizontalStep,
-                                              maxDivider,
-                                              stepDivider).astype(int)
+                                              divideScale).astype(int)
 
     print("\nStatistics for intermediate classifier (precision, rappel and f-score :")
     print(stats(myDetections, myLabelsResized))
@@ -144,8 +143,8 @@ if __name__ == '__main__':
     print("Extracting false positives labels from detections...")
     myFalsePositivesLabels = []
     for i in tqdm(range(myDetections[-1, 0] + 1)):
-        detections = myDetections[np.where(myDetections[:, 0] == i)]
-        faces = myLabelsResized[np.where(myLabelsResized[:, 0] == i)]
+        detections = get_label_with_index(myDetections, i)
+        faces = get_label_with_index(myLabelsResized, i)
         myFalsePositivesLabels += get_false_positives(detections, faces)
 
     myFalsePositivesLabels = np.array(myFalsePositivesLabels)
@@ -187,7 +186,7 @@ if __name__ == '__main__':
     print(cv_results["test_score"])
 
     print("Finding faces on all images with final classifier, this may take a while...")
-    myNewDetections = scan_images_multiprocessed(myImages, clf2, processes, verticalStep, horizontalStep, maxDivider, stepDivider)
+    myNewDetections = scan_images_multiprocessed(myImages, clf2, processes, verticalStep, horizontalStep, divideScale)
 
     print("\nStatistics for final classifier (precision, rappel and f-score) :")
     myNewDetectionsStats = stats(myNewDetections, myLabelsResized)
@@ -201,10 +200,10 @@ if __name__ == '__main__':
 
     f = open(folder_path + "summary.txt", "x")
     f.write(config + "\n")
+    f.write("Comment: {}".format(comment) + "\n")
     f.write("Vertical step: {}".format(verticalStep) + "\n")
     f.write("Horizontal step: {}".format(horizontalStep) + "\n")
-    f.write("Max Divider: {}".format(maxDivider) + "\n")
-    f.write("Divider step: {}".format(stepDivider) + "\n\n")
+    f.write("Divider Scale: {}".format(divideScale) + "\n\n")
     f.write("Precision: {}".format(myNewDetectionsStats[0]) + "\n")
     f.write("Rappel: {}".format(myNewDetectionsStats[1]) + "\n")
     f.write("F-Score: {}".format(myNewDetectionsStats[2]) + "\n")

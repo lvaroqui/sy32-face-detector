@@ -1,0 +1,9 @@
+svc_kernel_3
+Comment: new scale system
+Vertical step: 10
+Horizontal step: 10
+Divider Scale: 10
+
+Precision: 0.981203007518797
+Rappel: 0.8130841121495327
+F-Score: 0.889267461669506
