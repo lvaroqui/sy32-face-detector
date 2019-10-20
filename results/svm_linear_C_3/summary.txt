@@ -1,9 +1,0 @@
-svm_linear_2
-Vertical step: 10
-Horizontal step: 10
-Max Divider: 2.5
-Divider step: 0.33
-
-Precision: 0.8762589928057554
-Rappel: 0.4742990654205608
-F-Score: 0.6154623547246084

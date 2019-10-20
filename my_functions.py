@@ -2,19 +2,16 @@
 Custom functions for face detector project
 """
 import os
-import time
+from multiprocessing import Pool
 from random import randint
-from skimage.color import rgb2gray
 
 import numpy as np
 from skimage import feature
 from skimage import io
 from skimage import transform
 from skimage import util
+from skimage.color import rgb2gray
 from tqdm import tqdm
-from matplotlib import pyplot as plt
-
-from multiprocessing import Pool
 
 I_INDEX = 1
 J_INDEX = 2
@@ -24,9 +21,9 @@ WIDTH_INDEX = 4
 
 def load_from_folder(path):
     """
-    Return a list of all images from the given path
-    :param path: path from which to
-    :return: list of loaded images
+    Reads all images from the given path
+    :param path: path from which to read images
+    :return: loaded images
     """
     images = []
     files = os.listdir(path)
@@ -37,6 +34,12 @@ def load_from_folder(path):
 
 
 def get_label_with_index(labels, index):
+    """
+    Return label with a specific index
+    :param labels: List of labels
+    :param index: index of labels to be returned
+    :return: labels with matching index
+    """
     return labels[np.where(labels[:, 0] == index)]
 
 
@@ -44,7 +47,6 @@ def resize_label(label):
     """
     Resize a given label to a given HEIGHT / WIDTH ratio
     :param label: label to be resized
-    :param ratio: ratio Height / Width
     :return: resized label
     """
     # If current ratio greater than given ratio
@@ -60,7 +62,7 @@ def resize_label(label):
     return label
 
 
-def _extract_rects_with_padding(image, label):
+def _extract_samples_with_padding(image, label):
     """
     Extract a rect from an image according to the given label
     The function pads the cropped image with black if the rect oversteps the image
@@ -84,16 +86,16 @@ def _extract_rects_with_padding(image, label):
            label[J_INDEX]:label[J_INDEX] + label[WIDTH_INDEX]]
 
 
-def extract_rects(image, labels):
+def extract_samples(image, labels):
     """
-    Extract rects associated with n labels from image
-    :param image: image from which extract labels
+    Extract samples associated to labels from image
+    :param image: image from which to extract labels
     :param labels: labels to be extracted
     :return: extracted rects
     """
     faces = []
     for label in labels:
-        faces.append(_extract_rects_with_padding(image, label))
+        faces.append(_extract_samples_with_padding(image, label))
     return faces
 
 
@@ -123,7 +125,7 @@ def intersection_ratio(label1, label2):
 
 def generate_random_negatives(number, image, labels):
     """
-    Generate random not face patches of size (60*40) from an image
+    Generate random not face samples of size (60*40) from an image
     :param number: number of negative to be generated
     :param image: image from witch to extract patches
     :param labels: labels describing faces on the image
@@ -161,8 +163,8 @@ def generate_random_negatives(number, image, labels):
 
 def _remove_duplicates(labels):
     """
-    Remove duplicates in labels that have the same index
-    :param labels: labels from which remove duplicates
+    Remove duplicates from labels
+    :param labels: labels from which to remove duplicates
     :return: labels without duplicates
     """
     to_delete = []
@@ -176,26 +178,30 @@ def _remove_duplicates(labels):
 
 def find_faces(image, clf, index, vstep=15, hstep=15, dnum=5):
     """
-    Find faces in given image with a given classifier with sliding window
+    Find faces in an image
     :param image: image in which to find faces
     :param clf: classifier to recognize face
     :param index: index of the image
     :param vstep: vertical step taken during sliding window
     :param hstep: horizontal step taken during sliding window
-    :param dnum: divider step during sliding window
-    :return: labels with identified faces
+    :param dnum: number of scale division to do
+    :return: labels with identified faces without duplicates
     """
     img_height, img_width = image.shape[0], image.shape[1]
 
     labels = []
+    # Finding max divider
     dmax = int(min(img_height/60, img_height/40))
+    # For dnum scale division
     for divider in np.arange(1, dmax, (dmax - 1)/dnum):
+        # Rescaling image
         if divider > 1:
             new_width, new_height = int(img_width / divider), int(img_height / divider)
             image = transform.resize(image, (new_height, new_width), anti_aliasing=True)
         else:
             new_width, new_height = img_width, img_height
 
+        # Sliding window
         for i in range(0, new_height - 60, vstep):
             for j in range(0, new_width - 40, hstep):
                 face = image[i:i + 60, j:j + 40]
@@ -209,14 +215,13 @@ def find_faces(image, clf, index, vstep=15, hstep=15, dnum=5):
 
 def scan_images(images, clf, first_index, vstep=15, hstep=15, dnum=5):
     """
-    Scan image synchronously
-
+    Scan a batch of images
     :param images: images to scan
     :param clf: classifier
     :param first_index: first_index of scanned image
     :param vstep: vertical step taken during sliding window
     :param hstep: horizontal step taken during sliding window
-    :param dnum: divider step during sliding window
+    :param dnum: number of scale division to do
     :return:
     """
     detections = []
@@ -230,13 +235,13 @@ def scan_images(images, clf, first_index, vstep=15, hstep=15, dnum=5):
 
 def scan_images_multiprocessed(images, clf, processes, vstep=15, hstep=15, dnum=5):
     """
-    Scan a batch of images with multiple process
+    Scan a batch of images with multiple processes
     :param images: images to scan
     :param clf: classifier to scan images with
     :param processes: number of process to run
     :param vstep: vertical step taken during sliding window
     :param hstep: horizontal step taken during sliding window
-    :param dnum: divider step during sliding window
+    :param dnum: number of scale division to do
     :return: face labels
     """
     pool = Pool(processes=processes)  # start 4 worker processes
@@ -308,21 +313,29 @@ def stats(detections, faces):
 
 
 def precision_rappel(detections, faces):
+    """
+    Compute the precision/rappel array
+    :param detections: detections
+    :param faces: actual faces
+    :return: precision/rappel array (0: rappel, 1: precision)
+    """
     res = np.zeros((len(detections), 2))
     detections_sorted = detections[np.flip(detections[:, 5].argsort())]
+    faces_cp = faces.copy()
     vp, fp, fn, vn = 0, 0, 0, 0
 
     for i in range(len(detections_sorted)):
         found = False
-        for j in np.where(faces[:, 0] == detections_sorted[i, 0])[0]:
-            if intersection_ratio(detections_sorted[i], faces[j]) > 0.5:
+        for j in np.where(faces_cp[:, 0] == detections_sorted[i, 0])[0]:
+            if intersection_ratio(detections_sorted[i], faces_cp[j]) > 0.5:
                 found = True
+                faces_cp = np.delete(faces_cp, [j], axis=0)
                 break
         if found:
             vp += 1
         else:
             fp += 1
-        fn = len(faces) - i - 1
+        fn = len(faces_cp)
 
         res[i, 0] = vp / (vp + fn)  # rappel
         res[i, 1] = vp / (vp + fp)  # precision
