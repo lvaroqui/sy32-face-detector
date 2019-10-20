@@ -4,5 +4,5 @@ test*
 result_labels/
 label.txt
 Rendu/
-
+*.sh
 __pycache__/
