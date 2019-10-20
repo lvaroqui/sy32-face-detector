@@ -1,9 +1,0 @@
-svc_kernel_rbf_1
-Vertical step: 10
-Horizontal step: 10
-Max Divider: 2.5
-Divider step: 0.33
-
-Precision: 0.9867549668874173
-Rappel: 0.46417445482866043
-F-Score: 0.6313559322033898

@@ -1,7 +1,8 @@
+classifiers/
 train/
-test/
-result1/
-test_faces/
+test*
+result_labels/
 label.txt
+Rendu/
 
 __pycache__/

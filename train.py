@@ -1,62 +1,63 @@
-import numpy as np
-from skimage import feature
-from skimage import transform
-from skimage import util
-from skimage import io
-from skimage.color import rgb2gray
-
-from my_functions import load_from_folder
-from my_functions import resize_label
-from my_functions import extract_rects
-from my_functions import intersection_ratio
-from my_functions import generate_random_negatives
-from my_functions import find_faces
-from my_functions import get_false_positives
-from my_functions import scan_images_multiprocessed
-from my_functions import stats
-from my_functions import get_label_with_index
-from joblib import dump
-
-from my_functions import precision_rappel
-from matplotlib import pyplot as plt
-
 from os import mkdir
 
+import numpy as np
+from joblib import dump
+
 from tqdm import tqdm
+from matplotlib import pyplot as plt
+
+from skimage import feature
+from skimage import io
+from skimage import transform
+from skimage import util
+from skimage.color import rgb2gray
+from sklearn.base import clone
+from sklearn.model_selection import cross_validate
+
+
+from my_functions import extract_samples
+from my_functions import generate_random_negatives
+from my_functions import get_false_positives
+from my_functions import get_label_with_index
+from my_functions import load_from_folder
+from my_functions import precision_rappel
+from my_functions import resize_label
+from my_functions import scan_images_multiprocessed
+from my_functions import stats
 
 if __name__ == '__main__':
 
     # CONFIGURATION
 
+    # Config name
+    config_name = "svc_kernel_rbf_3"
+    # Comment about config
+    comment = ""
+
+    # Creating and configuring classifier
     from sklearn.svm import SVC
+    intermediate_clf = SVC(kernel="rbf", gamma="scale")
+
     # from sklearn.svm import LinearSVC
+    # intermediate_clf = LinearSVC(C=3)
 
-    config = "svc_kernel_3"
-    comment = "new scale system"
+    intermediate_clf.max_iter = 3000
 
-    clf = SVC(kernel="rbf", gamma="scale")
-    clf2 = SVC(kernel="rbf", gamma="scale")
-    # clf = LinearSVC(C=3)
-    # clf2 = LinearSVC(C=3)
-
-    clf.max_iter = 3000
-    clf2.max_iter = 3000
-
+    # Sliding window configuration
     verticalStep = 10
     horizontalStep = 10
-    divideScale = 10
+    divisionNumber = 10
 
+    # Number of parallel processes to create for image scanning
     processes = 8
+
+    # Load negatives from existing folder
+    load_negatives_from_folder = True
 
     # PROGRAM
 
     # IMPORTANT NOTE : I renamed the train image and label n°1000 to n°0
-    # to have picture index matching their number
-
-    I_INDEX = 1
-    J_INDEX = 2
-    HEIGHT_INDEX = 3
-    WIDTH_INDEX = 4
+    # to have picture indexes matching their number
 
     print("----Preparing data for classifier----")
     print("Loading train labels...")
@@ -74,24 +75,25 @@ if __name__ == '__main__':
     myFaces = np.zeros((len(myLabelsResized), 60, 40, 3))
     i = 0
     for image_index, image in enumerate(tqdm(myImages)):
-        faces_for_image = extract_rects(image, myLabelsResized[np.where(myLabelsResized[:, 0] == image_index)])
+        faces_for_image = extract_samples(image, get_label_with_index(myLabelsResized, image_index))
         for false_positive in faces_for_image:
             myFaces[i] = transform.resize(false_positive, (60, 40), mode="constant", anti_aliasing=True)
             i += 1
 
-    # print("Generating negative patches...")
-    # random_per_image = 10
-    # myNegatives = np.zeros((len(myImages) * random_per_image, 60, 40, 3))
-    # for i in tqdm(range(len(myImages))):
-    #     myNegatives[i * random_per_image:i * random_per_image + 10] \
-    #         = generate_random_negatives(random_per_image, myImages[i], get_label_with_index(myLabelsResized, i))
-    #
-    # print("Saving negative patches to disk...")
-    # for i, negative in enumerate(tqdm(util.img_as_ubyte(myNegatives))):
-    #     io.imsave("negatives/" + str(i).zfill(5) + ".jpg", negative)
+    if load_negatives_from_folder:
+        print("Loading negatives from folder...")
+        myNegatives = load_from_folder("negatives/")
+    else:
+        print("Generating negative patches...")
+        random_per_image = 10
+        myNegatives = np.zeros((len(myImages) * random_per_image, 60, 40, 3))
+        for i in tqdm(range(len(myImages))):
+            myNegatives[i * random_per_image:i * random_per_image + 10] \
+                = generate_random_negatives(random_per_image, myImages[i], get_label_with_index(myLabelsResized, i))
 
-    print("Loading negatives from folder...")
-    myNegatives = load_from_folder("negatives/")
+        print("Saving negative patches to disk...")
+        for i, negative in enumerate(tqdm(util.img_as_ubyte(myNegatives))):
+            io.imsave("negatives/" + str(i).zfill(5) + ".jpg", negative)
 
     print("Computing negative HOGs...")
     myNegativeHogs = np.zeros((len(myNegatives), 1215))
@@ -118,32 +120,31 @@ if __name__ == '__main__':
     print("\n----Intermediate classifier----")
     print("Learning...")
 
-    clf.fit(myShuffledHogs, myShuffledTargets)
-
-    from sklearn.model_selection import cross_validate
+    intermediate_clf.fit(myShuffledHogs, myShuffledTargets)
 
     print("Cross validating classifier...")
-    cv_results = cross_validate(clf, myShuffledHogs, myShuffledTargets, cv=3, return_train_score=False)
+    cv_results = cross_validate(intermediate_clf, myShuffledHogs, myShuffledTargets, cv=3, return_train_score=False)
     print("Result of cross_validation :")
     print(cv_results["test_score"])
 
     print("Finding faces on all images, this may take a while...")
     myDetections = scan_images_multiprocessed(myImages,
-                                              clf,
+                                              intermediate_clf,
                                               processes,
                                               verticalStep,
                                               horizontalStep,
-                                              divideScale).astype(int)
+                                              divisionNumber)
 
     print("\nStatistics for intermediate classifier (precision, rappel and f-score :")
-    print(stats(myDetections, myLabelsResized))
+    myDetectionsStats = stats(myDetections, myLabelsResized)
+    print(myDetectionsStats)
 
     print("\n----Extracting intermediate classifier false positives----")
 
     print("Extracting false positives labels from detections...")
     myFalsePositivesLabels = []
-    for i in tqdm(range(myDetections[-1, 0] + 1)):
-        detections = get_label_with_index(myDetections, i)
+    for i in tqdm(range(myDetections.astype(int)[-1, 0] + 1)):
+        detections = get_label_with_index(myDetections.astype(int), i)
         faces = get_label_with_index(myLabelsResized, i)
         myFalsePositivesLabels += get_false_positives(detections, faces)
 
@@ -153,7 +154,7 @@ if __name__ == '__main__':
     myFalsePositives = np.zeros((len(myFalsePositivesLabels), 60, 40, 3))
     i = 0
     for image_index, image in enumerate(tqdm(myImages)):
-        false_positives_for_image = extract_rects(image, myFalsePositivesLabels[
+        false_positives_for_image = extract_samples(image, myFalsePositivesLabels[
             np.where(myFalsePositivesLabels[:, 0] == image_index)])
         for false_positive in false_positives_for_image:
             myFalsePositives[i] = transform.resize(false_positive, (60, 40), mode="constant", anti_aliasing=True)
@@ -176,41 +177,65 @@ if __name__ == '__main__':
     myShuffledTargetsWithFalsePositives = myTargetsWithFalsePositives[permutation]
 
     print("\n----Final Classifier----")
+    # Cloning intermediate classifier to final classifier
+    final_classifier = clone(intermediate_clf)
+
     print("Learning with False Positives from intermediate Classifer...")
-    clf2.fit(myShuffledHogsWithFalsePositives, myShuffledTargetsWithFalsePositives)
+    final_classifier.fit(myShuffledHogsWithFalsePositives, myShuffledTargetsWithFalsePositives)
 
     print("Cross validating classifier...")
-    cv_results = cross_validate(clf2, myShuffledHogsWithFalsePositives, myShuffledTargetsWithFalsePositives, cv=3,
+    cv_results = cross_validate(final_classifier, myShuffledHogsWithFalsePositives, myShuffledTargetsWithFalsePositives,
+                                cv=3,
                                 return_train_score=False)
     print("Result of cross_validation :")
     print(cv_results["test_score"])
 
     print("Finding faces on all images with final classifier, this may take a while...")
-    myNewDetections = scan_images_multiprocessed(myImages, clf2, processes, verticalStep, horizontalStep, divideScale)
+    myNewDetections = scan_images_multiprocessed(myImages, final_classifier, processes, verticalStep, horizontalStep,
+                                                 divisionNumber)
 
     print("\nStatistics for final classifier (precision, rappel and f-score) :")
     myNewDetectionsStats = stats(myNewDetections, myLabelsResized)
     print(myNewDetectionsStats)
 
     print("\nSaving data...")
-    folder_path = "results/" + config + "/"
+    folder_path = "classifiers/" + config_name + "/"
     mkdir(folder_path)
     np.savetxt(folder_path + "detections.txt", myNewDetections)
-    dump(clf2, folder_path + 'clf.joblib')
+    dump(final_classifier, folder_path + 'clf.joblib')
 
     f = open(folder_path + "summary.txt", "x")
-    f.write(config + "\n")
+    f.write(config_name + "\n")
     f.write("Comment: {}".format(comment) + "\n")
     f.write("Vertical step: {}".format(verticalStep) + "\n")
     f.write("Horizontal step: {}".format(horizontalStep) + "\n")
-    f.write("Divider Scale: {}".format(divideScale) + "\n\n")
+    f.write("Divider Scale: {}".format(divisionNumber) + "\n\n")
+
+    f.write("--- Intermediate classifier---\n")
+    f.write("Precision: {}".format(myDetectionsStats[0]) + "\n")
+    f.write("Rappel: {}".format(myDetectionsStats[1]) + "\n")
+    f.write("F-Score: {}".format(myDetectionsStats[2]) + "\n\n")
+
+    f.write("--- Final classifier---\n")
     f.write("Precision: {}".format(myNewDetectionsStats[0]) + "\n")
     f.write("Rappel: {}".format(myNewDetectionsStats[1]) + "\n")
     f.write("F-Score: {}".format(myNewDetectionsStats[2]) + "\n")
+    f.write("Cross-Validation Average Score: {}".format(np.average(cv_results["test_score"])) + "\n")
     f.close()
+
+    precision_rappel_data = precision_rappel(myDetections, myLabelsResized)
+    plt.plot(precision_rappel_data[:, 0], precision_rappel_data[:, 1], linewidth=5)
+    plt.xlim((0, 1))
+    plt.ylim((0, 1))
+    plt.ylabel("Précision")
+    plt.xlabel("Rappel")
+    plt.savefig(folder_path + "precision_rappel_intermediate.jpg")
+    plt.clf()
 
     precision_rappel_data = precision_rappel(myNewDetections, myLabelsResized)
     plt.plot(precision_rappel_data[:, 0], precision_rappel_data[:, 1], linewidth=5)
     plt.xlim((0, 1))
     plt.ylim((0, 1))
+    plt.ylabel("Précision")
+    plt.xlabel("Rappel")
     plt.savefig(folder_path + "precision_rappel.jpg")
